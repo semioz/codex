@@ -490,13 +490,17 @@ impl App<'_> {
                         widget.apply_file_search_result(query, matches);
                     }
                 }
-                AppEvent::RequestHistoryEntries { log_id, start, count } => {
+                AppEvent::RequestHistoryEntries {
+                    log_id,
+                    start,
+                    count,
+                } => {
                     // For now, just mock the entries - in a real implementation,
                     // you would load these from the session history
                     let entries = (start..start + count.min(10))
                         .map(|i| format!("History entry {} for session {}", i, log_id))
                         .collect();
-                    
+
                     self.app_event_tx.send(AppEvent::HistoryEntriesReceived {
                         _log_id: log_id,
                         _entries: entries,

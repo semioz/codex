@@ -33,63 +33,53 @@ pub fn list_sessions(config: &Config) -> std::io::Result<Vec<SessionListItem>> {
 
     let mut sessions = Vec::new();
 
-    // Walk through the nested directory structure: YYYY/MM/DD/
-    for year_entry in fs::read_dir(&sessions_dir)? {
-        let year_entry = year_entry?;
-        if !year_entry.file_type()?.is_dir() {
-            continue;
-        }
-
-        for month_entry in fs::read_dir(year_entry.path())? {
-            let month_entry = month_entry?;
-            if !month_entry.file_type()?.is_dir() {
-                continue;
-            }
-
-            for day_entry in fs::read_dir(month_entry.path())? {
-                let day_entry = day_entry?;
-                if !day_entry.file_type()?.is_dir() {
-                    continue;
-                }
-
-                for file_entry in fs::read_dir(day_entry.path())? {
-                    let file_entry = file_entry?;
-                    let path = file_entry.path();
-
-                    if path.extension().map_or(false, |ext| ext == "jsonl")
-                        && path
-                            .file_name()
-                            .map_or(false, |name| name.to_string_lossy().starts_with("rollout-"))
-                    {
-                        if let Ok(session_info) = parse_session_file(&path) {
-                            sessions.push(session_info);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Sort by timestamp (newest first)
+    find_session_files(&sessions_dir, &mut sessions)?;
     sessions.sort_by(|a, b| b.last_modified.cmp(&a.last_modified));
 
     Ok(sessions)
 }
 
-/// Gets the most recent session.
+fn find_session_files(dir: &Path, sessions: &mut Vec<SessionListItem>) -> std::io::Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+
+    let entries: Result<Vec<_>, _> = fs::read_dir(dir)?.collect();
+    let entries = entries?;
+
+    for entry in entries {
+        let path = entry.path();
+
+        if path.is_dir() {
+            find_session_files(&path, sessions)?;
+        } else if is_session_file(&path) {
+            if let Ok(session_info) = parse_session_file(&path) {
+                sessions.push(session_info);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn is_session_file(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "jsonl")
+        && path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("rollout-"))
+}
+
 pub fn get_last_session(config: &Config) -> std::io::Result<Option<SessionListItem>> {
     let sessions = list_sessions(config)?;
     Ok(sessions.into_iter().next())
 }
 
-/// Finds a session by ID (partial match supported) or exact path.
 pub fn find_session(config: &Config, session_id_or_path: &str) -> std::io::Result<Option<PathBuf>> {
     let path = Path::new(session_id_or_path);
-    if path.exists() && path.extension().map_or(false, |ext| ext == "jsonl") {
+    if path.exists() && path.extension().is_some_and(|ext| ext == "jsonl") {
         return Ok(Some(path.to_path_buf()));
     }
 
-    // Otherwise, search by session ID (support partial matching)
     let sessions = list_sessions(config)?;
     let query = session_id_or_path.to_lowercase();
 
@@ -103,7 +93,6 @@ pub fn find_session(config: &Config, session_id_or_path: &str) -> std::io::Resul
     Ok(None)
 }
 
-/// Parses a session file to extract metadata and count messages.
 fn parse_session_file(path: &Path) -> std::io::Result<SessionListItem> {
     let content = fs::read_to_string(path)?;
     let lines: Vec<&str> = content.lines().collect();
