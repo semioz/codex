@@ -142,6 +142,10 @@ fn make_chatwidget_manual() -> (
         interrupts: InterruptManager::new(),
         needs_redraw: false,
         session_id: None,
+        last_key_was_escape: false,
+        history_viewer: None,
+        history_log_id: None,
+        history_entry_count: 0,
     };
     (widget, rx, op_rx)
 }

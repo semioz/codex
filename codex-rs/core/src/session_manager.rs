@@ -84,7 +84,6 @@ pub fn get_last_session(config: &Config) -> std::io::Result<Option<SessionListIt
 
 /// Finds a session by ID (partial match supported) or exact path.
 pub fn find_session(config: &Config, session_id_or_path: &str) -> std::io::Result<Option<PathBuf>> {
-    // If it's a path, check if it exists
     let path = Path::new(session_id_or_path);
     if path.exists() && path.extension().map_or(false, |ext| ext == "jsonl") {
         return Ok(Some(path.to_path_buf()));
@@ -124,7 +123,6 @@ fn parse_session_file(path: &Path) -> std::io::Result<SessionListItem> {
         )
     })?;
 
-    // Extract session metadata
     let session_meta: SessionMeta =
         serde_json::from_value(metadata_value.clone()).map_err(|e| {
             std::io::Error::new(
@@ -133,14 +131,12 @@ fn parse_session_file(path: &Path) -> std::io::Result<SessionListItem> {
             )
         })?;
 
-    // Extract git info if present
     let git_branch = metadata_value
         .get("git")
         .and_then(|git| git.get("branch"))
         .and_then(|branch| branch.as_str())
         .map(|s| s.to_string());
 
-    // Count message items (excluding metadata and state records)
     let message_count = lines[1..]
         .iter()
         .filter(|line| !line.trim().is_empty())
@@ -167,67 +163,7 @@ fn parse_session_file(path: &Path) -> std::io::Result<SessionListItem> {
     })
 }
 
-/// Prints a formatted list of sessions for interactive selection.
-pub fn print_session_list(sessions: &[SessionListItem]) {
-    if sessions.is_empty() {
-        println!("No conversation sessions found.");
-        return;
-    }
-
-    println!(
-        "    {:10} {:10} {:>10} {:15} {}",
-        "Modified", "Created", "# Messages", "Git Branch", "Summary"
-    );
-
-    for (index, session) in sessions.iter().enumerate() {
-        let modified_ago = format_time_ago(session.last_modified);
-        let created_ago = format_time_ago(session.created_time);
-
-        let git_branch = session
-            .git_branch
-            .as_ref()
-            .map(|b| {
-                if b.len() > 14 {
-                    format!("{}...", &b[..11])
-                } else {
-                    b.clone()
-                }
-            })
-            .unwrap_or_else(|| "-".to_string());
-
-        let summary = session
-            .instructions
-            .as_ref()
-            .map(|s| {
-                if s.len() > 50 {
-                    format!("{}...", &s[..47])
-                } else {
-                    s.clone()
-                }
-            })
-            .unwrap_or_else(|| "No summary available".to_string());
-
-        let marker = if index == 0 { "❯" } else { " " };
-
-        println!(
-            "{} {}. {:10} {:10} {:>10} {:15} {}",
-            marker,
-            index + 1,
-            modified_ago,
-            created_ago,
-            session.message_count,
-            git_branch,
-            summary
-        );
-    }
-
-    println!();
-    println!("Use arrow keys to navigate and press Enter to select a session");
-    println!("Use --resume <session_id> to resume a specific session");
-    println!("Use --continue to resume the most recent session");
-}
-
-fn format_time_ago(time: std::time::SystemTime) -> String {
+pub fn format_time_ago(time: std::time::SystemTime) -> String {
     let duration = time.elapsed().unwrap_or_default();
     let secs = duration.as_secs();
 

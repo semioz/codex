@@ -356,6 +356,7 @@ fn determine_repo_trust_state(
     }
 }
 
+#[allow(clippy::print_stderr)]
 async fn handle_session_resume(
     cli: Cli,
     codex_linux_sandbox_exe: Option<PathBuf>,
@@ -363,9 +364,7 @@ async fn handle_session_resume(
     use codex_core::session_manager::find_session;
     use codex_core::session_manager::get_last_session;
     use codex_core::session_manager::list_sessions;
-    use codex_core::session_manager::print_session_list;
 
-    // Load basic config to access codex home directory
     let config = {
         #[allow(clippy::print_stderr)]
         match Config::load_with_cli_overrides(Vec::new(), ConfigOverrides::default()) {
@@ -397,12 +396,10 @@ async fn handle_session_resume(
         match &cli.resume_session {
             Some(Some(session_id_or_path)) => {
                 if session_id_or_path == "list" {
-                    // List all available sessions
                     let sessions = list_sessions(&config)?;
                     print_session_list(&sessions);
                     std::process::exit(0);
                 } else {
-                    // Find and resume specific session
                     match find_session(&config, session_id_or_path)? {
                         Some(path) => {
                             eprintln!("Resuming session from: {}", path.display());
@@ -428,7 +425,7 @@ async fn handle_session_resume(
                 print_session_list(&sessions);
 
                 eprint!("\nEnter number (1-{}): ", sessions.len());
-                std::io::Write::flush(&mut std::io::stderr()).unwrap();
+                std::io::Write::flush(&mut std::io::stderr())?;
 
                 let mut input = String::new();
                 std::io::stdin().read_line(&mut input)?;
@@ -453,12 +450,12 @@ async fn handle_session_resume(
             None => unreachable!(),
         }
     } else {
-        // This shouldn't happen given the check in run_main
         eprintln!("No session specified for resume");
         std::process::exit(1);
     }
 }
 
+#[allow(clippy::print_stderr)]
 async fn resume_session_at_path(
     cli: Cli,
     codex_linux_sandbox_exe: Option<PathBuf>,
@@ -467,7 +464,7 @@ async fn resume_session_at_path(
     // Create a modified CLI config with the session resumption enabled
     let mut modified_cli = cli;
 
-    // Continue with the normal TUI flow
+    // then continue with the normal TUI flow
     let (sandbox_mode, approval_policy) = if modified_cli.full_auto {
         (
             Some(SandboxMode::WorkspaceWrite),
@@ -485,15 +482,12 @@ async fn resume_session_at_path(
         )
     };
 
-    // When using `--oss`, let the bootstrapper pick the model (defaulting to
-    // gpt-oss:20b) and ensure it is present locally. Also, force the built‑in
-    // `oss` model provider.
     let model = if let Some(model) = &modified_cli.model {
         Some(model.clone())
     } else if modified_cli.oss {
         Some(DEFAULT_OSS_MODEL.to_owned())
     } else {
-        None // No model specified, will use the default.
+        None
     };
 
     let model_provider_override = if modified_cli.oss {
@@ -623,4 +617,66 @@ async fn resume_session_at_path(
 
     run_ratatui_app(modified_cli, config, should_show_trust_screen)
         .map_err(|err| std::io::Error::other(err.to_string()))
+}
+
+#[allow(clippy::print_stderr)]
+fn print_session_list(sessions: &[codex_core::session_manager::SessionListItem]) {
+    use codex_core::session_manager::format_time_ago;
+
+    if sessions.is_empty() {
+        eprintln!("No conversation sessions found.");
+        return;
+    }
+
+    eprintln!(
+        "    {:10} {:10} {:>10} {:15} {}",
+        "Modified", "Created", "# Messages", "Git Branch", "Summary"
+    );
+
+    for (index, session) in sessions.iter().enumerate() {
+        let modified_ago = format_time_ago(session.last_modified);
+        let created_ago = format_time_ago(session.created_time);
+
+        let git_branch = session
+            .git_branch
+            .as_ref()
+            .map(|b| {
+                if b.len() > 14 {
+                    format!("{}...", &b[..11])
+                } else {
+                    b.clone()
+                }
+            })
+            .unwrap_or_else(|| "-".to_string());
+
+        let summary = session
+            .instructions
+            .as_ref()
+            .map(|s| {
+                if s.len() > 50 {
+                    format!("{}...", &s[..47])
+                } else {
+                    s.clone()
+                }
+            })
+            .unwrap_or_else(|| "No summary available".to_string());
+
+        let marker = if index == 0 { "❯" } else { " " };
+
+        eprintln!(
+            "{} {}. {:10} {:10} {:>10} {:15} {}",
+            marker,
+            index + 1,
+            modified_ago,
+            created_ago,
+            session.message_count,
+            git_branch,
+            summary
+        );
+    }
+
+    eprintln!();
+    eprintln!("Use arrow keys to navigate and press Enter to select a session");
+    eprintln!("Use --resume <session_id> to resume a specific session");
+    eprintln!("Use --continue to resume the most recent session");
 }
