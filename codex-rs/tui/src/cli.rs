@@ -58,9 +58,9 @@ pub struct Cli {
     #[arg(long = "continue", default_value_t = false)]
     pub continue_last: bool,
 
-    /// Resume a specific conversation session by ID or path.
+    /// Resume a specific conversation session by ID or path, or show an interactive picker if no session specified.
     #[arg(long = "resume", value_name = "SESSION_ID_OR_PATH")]
-    pub resume_session: Option<String>,
+    pub resume_session: Option<Option<String>>,
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,

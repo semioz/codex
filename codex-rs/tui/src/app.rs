@@ -75,7 +75,7 @@ pub(crate) struct App<'a> {
 /// Aggregate parameters needed to create a `ChatWidget`, as creation may be
 /// deferred until after the Git warning screen is dismissed.
 #[derive(Clone, Debug)]
-pub(crate) struct ChatWidgetArgs {
+pub struct ChatWidgetArgs {
     pub(crate) config: Config,
     initial_prompt: Option<String>,
     initial_images: Vec<PathBuf>,
@@ -498,11 +498,11 @@ impl App<'_> {
                         .collect();
                     
                     self.app_event_tx.send(AppEvent::HistoryEntriesReceived {
-                        log_id,
-                        entries,
+                        _log_id: log_id,
+                        _entries: entries,
                     });
                 }
-                AppEvent::HistoryEntriesReceived { log_id: _, entries: _ } => {
+                AppEvent::HistoryEntriesReceived { _log_id, _entries } => {
                     if let AppState::Chat { widget: _ } = &mut self.app_state {
                         // Update the history viewer with the loaded entries
                         // This would need a method on ChatWidget to forward to the history viewer

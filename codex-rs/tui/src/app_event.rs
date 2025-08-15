@@ -9,7 +9,7 @@ use crate::slash_command::SlashCommand;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(crate) enum AppEvent {
+pub enum AppEvent {
     CodexEvent(Event),
 
     /// Request a redraw which will be debounced by the [`App`].
@@ -70,7 +70,7 @@ pub(crate) enum AppEvent {
 
     /// History entries loaded for the conversation history viewer
     HistoryEntriesReceived {
-        log_id: String,
-        entries: Vec<String>,
+        _log_id: String,
+        _entries: Vec<String>,
     },
 }

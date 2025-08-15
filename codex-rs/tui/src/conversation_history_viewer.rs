@@ -135,9 +135,6 @@ impl ConversationHistoryViewer {
         self.is_complete
     }
 
-    fn render_content(&self, area: Rect) -> (Vec<Line<'static>>, ScrollbarState) {
-        self.render_content_with_height(area.height)
-    }
 
     fn render_content_with_height(&self, height: u16) -> (Vec<Line<'static>>, ScrollbarState) {
         let mut lines = Vec::new();

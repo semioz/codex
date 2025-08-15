@@ -802,10 +802,6 @@ impl ChatWidget<'_> {
         }
     }
 
-    fn handle_session_configured(&mut self, log_id: String, entry_count: usize) {
-        self.history_log_id = Some(log_id);
-        self.history_entry_count = entry_count;
-    }
 }
 
 impl WidgetRef for &ChatWidget<'_> {

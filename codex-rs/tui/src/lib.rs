@@ -360,7 +360,10 @@ async fn handle_session_resume(
     cli: Cli,
     codex_linux_sandbox_exe: Option<PathBuf>,
 ) -> std::io::Result<codex_core::protocol::TokenUsage> {
-    use codex_core::session_manager::{list_sessions, get_last_session, find_session, print_session_list};
+    use codex_core::session_manager::find_session;
+    use codex_core::session_manager::get_last_session;
+    use codex_core::session_manager::list_sessions;
+    use codex_core::session_manager::print_session_list;
 
     // Load basic config to access codex home directory
     let config = {
@@ -378,8 +381,11 @@ async fn handle_session_resume(
         // Resume the most recent session
         match get_last_session(&config)? {
             Some(session) => {
-                eprintln!("Resuming last session: {} ({} messages)", 
-                         &session.id.to_string()[..8], session.message_count);
+                eprintln!(
+                    "Resuming last session: {} ({} messages)",
+                    &session.id.to_string()[..8],
+                    session.message_count
+                );
                 resume_session_at_path(cli, codex_linux_sandbox_exe, session.path).await
             }
             None => {
@@ -387,25 +393,89 @@ async fn handle_session_resume(
                 std::process::exit(1);
             }
         }
-    } else if let Some(session_id_or_path) = &cli.resume_session {
-        if session_id_or_path == "list" {
-            // List all available sessions
-            let sessions = list_sessions(&config)?;
-            print_session_list(&sessions);
-            std::process::exit(0);
-        } else {
-            // Find and resume specific session
-            match find_session(&config, session_id_or_path)? {
-                Some(path) => {
-                    eprintln!("Resuming session from: {}", path.display());
-                    resume_session_at_path(cli, codex_linux_sandbox_exe, path).await
-                }
-                None => {
-                    eprintln!("Session not found: {}", session_id_or_path);
-                    eprintln!("Use --resume list to see available sessions");
-                    std::process::exit(1);
+    } else if cli.resume_session.is_some() {
+        match &cli.resume_session {
+            Some(Some(session_id_or_path)) => {
+                if session_id_or_path == "list" {
+                    // List all available sessions
+                    let sessions = list_sessions(&config)?;
+                    print_session_list(&sessions);
+                    std::process::exit(0);
+                } else {
+                    // Find and resume specific session
+                    match find_session(&config, session_id_or_path)? {
+                        Some(path) => {
+                            eprintln!("Resuming session from: {}", path.display());
+                            resume_session_at_path(cli, codex_linux_sandbox_exe, path).await
+                        }
+                        None => {
+                            eprintln!("Session not found: {}", session_id_or_path);
+                            eprintln!("Use --resume to see the interactive picker");
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
+            Some(None) => {
+                // Show interactive conversation picker
+                let sessions = list_sessions(&config)?;
+                if sessions.is_empty() {
+                    eprintln!("No conversation sessions found.");
+                    std::process::exit(1);
+                }
+
+                // For now, show a simple menu - in a more complete implementation,
+                // this would be an interactive picker with arrow keys
+                eprintln!("Select a conversation to resume:");
+                eprintln!();
+
+                for (index, session) in sessions.iter().enumerate() {
+                    let instructions_preview = session
+                        .instructions
+                        .as_ref()
+                        .map(|s| {
+                            let truncated = if s.len() > 60 {
+                                format!("{}...", &s[..57])
+                            } else {
+                                s.clone()
+                            };
+                            format!(" - {}", truncated)
+                        })
+                        .unwrap_or_default();
+
+                    eprintln!(
+                        "  {}. {} ({} messages){}",
+                        index + 1,
+                        &session.id.to_string()[..8],
+                        session.message_count,
+                        instructions_preview
+                    );
+                }
+
+                eprint!("\nEnter number (1-{}): ", sessions.len());
+                std::io::Write::flush(&mut std::io::stderr()).unwrap();
+
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+
+                let choice: usize = match input.trim().parse() {
+                    Ok(n) if n >= 1 && n <= sessions.len() => n,
+                    _ => {
+                        eprintln!("Invalid selection.");
+                        std::process::exit(1);
+                    }
+                };
+
+                let selected_session = &sessions[choice - 1];
+                eprintln!(
+                    "Resuming session: {} ({} messages)",
+                    &selected_session.id.to_string()[..8],
+                    selected_session.message_count
+                );
+                resume_session_at_path(cli, codex_linux_sandbox_exe, selected_session.path.clone())
+                    .await
+            }
+            None => unreachable!(),
         }
     } else {
         // This shouldn't happen given the check in run_main
@@ -421,7 +491,7 @@ async fn resume_session_at_path(
 ) -> std::io::Result<codex_core::protocol::TokenUsage> {
     // Create a modified CLI config with the session resumption enabled
     let mut modified_cli = cli;
-    
+
     // Continue with the normal TUI flow
     let (sandbox_mode, approval_policy) = if modified_cli.full_auto {
         (
@@ -458,7 +528,10 @@ async fn resume_session_at_path(
     };
 
     // canonicalize the cwd
-    let cwd = modified_cli.cwd.clone().map(|p| p.canonicalize().unwrap_or(p));
+    let cwd = modified_cli
+        .cwd
+        .clone()
+        .map(|p| p.canonicalize().unwrap_or(p));
 
     let overrides = ConfigOverrides {
         model,
@@ -477,10 +550,10 @@ async fn resume_session_at_path(
 
     // Add the experimental_resume path to the CLI overrides by manually adding the raw override
     modified_cli.config_overrides.raw_overrides.push(format!(
-        "experimental_resume=\"{}\""
-        , session_path.to_string_lossy()
+        "experimental_resume=\"{}\"",
+        session_path.to_string_lossy()
     ));
-    
+
     // Parse `-c` overrides from the CLI (including our added override).
     let cli_kv_overrides = match modified_cli.config_overrides.parse_overrides() {
         Ok(v) => v,
