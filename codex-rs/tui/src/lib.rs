@@ -424,33 +424,8 @@ async fn handle_session_resume(
                     std::process::exit(1);
                 }
 
-                // For now, show a simple menu - in a more complete implementation,
-                // this would be an interactive picker with arrow keys
-                eprintln!("Select a conversation to resume:");
-                eprintln!();
-
-                for (index, session) in sessions.iter().enumerate() {
-                    let instructions_preview = session
-                        .instructions
-                        .as_ref()
-                        .map(|s| {
-                            let truncated = if s.len() > 60 {
-                                format!("{}...", &s[..57])
-                            } else {
-                                s.clone()
-                            };
-                            format!(" - {}", truncated)
-                        })
-                        .unwrap_or_default();
-
-                    eprintln!(
-                        "  {}. {} ({} messages){}",
-                        index + 1,
-                        &session.id.to_string()[..8],
-                        session.message_count,
-                        instructions_preview
-                    );
-                }
+                // Show enhanced session picker with tabular format
+                print_session_list(&sessions);
 
                 eprint!("\nEnter number (1-{}): ", sessions.len());
                 std::io::Write::flush(&mut std::io::stderr()).unwrap();

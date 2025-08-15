@@ -19,6 +19,8 @@ pub struct SessionListItem {
     pub instructions: Option<String>,
     pub message_count: usize,
     pub last_modified: std::time::SystemTime,
+    pub created_time: std::time::SystemTime,
+    pub git_branch: Option<String>,
 }
 
 /// Lists all available conversation sessions in the codex home directory.
@@ -114,13 +116,29 @@ fn parse_session_file(path: &Path) -> std::io::Result<SessionListItem> {
         ));
     }
 
-    // First line should contain the session metadata
-    let session_meta: SessionMeta = serde_json::from_str(lines[0]).map_err(|e| {
+    // First line should contain the session metadata with potential git info
+    let metadata_value: serde_json::Value = serde_json::from_str(lines[0]).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("Failed to parse session metadata: {}", e),
         )
     })?;
+
+    // Extract session metadata
+    let session_meta: SessionMeta =
+        serde_json::from_value(metadata_value.clone()).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse session metadata: {}", e),
+            )
+        })?;
+
+    // Extract git info if present
+    let git_branch = metadata_value
+        .get("git")
+        .and_then(|git| git.get("branch"))
+        .and_then(|branch| branch.as_str())
+        .map(|s| s.to_string());
 
     // Count message items (excluding metadata and state records)
     let message_count = lines[1..]
@@ -135,6 +153,7 @@ fn parse_session_file(path: &Path) -> std::io::Result<SessionListItem> {
 
     let metadata = fs::metadata(path)?;
     let last_modified = metadata.modified()?;
+    let created_time = metadata.created().unwrap_or(last_modified);
 
     Ok(SessionListItem {
         id: session_meta.id,
@@ -143,6 +162,8 @@ fn parse_session_file(path: &Path) -> std::io::Result<SessionListItem> {
         instructions: session_meta.instructions,
         message_count,
         last_modified,
+        created_time,
+        git_branch,
     })
 }
 
@@ -153,36 +174,55 @@ pub fn print_session_list(sessions: &[SessionListItem]) {
         return;
     }
 
-    println!("Available conversation sessions:");
-    println!();
+    println!(
+        "    {:10} {:10} {:>10} {:15} {}",
+        "Modified", "Created", "# Messages", "Git Branch", "Summary"
+    );
 
     for (index, session) in sessions.iter().enumerate() {
-        let instructions_preview = session
+        let modified_ago = format_time_ago(session.last_modified);
+        let created_ago = format_time_ago(session.created_time);
+
+        let git_branch = session
+            .git_branch
+            .as_ref()
+            .map(|b| {
+                if b.len() > 14 {
+                    format!("{}...", &b[..11])
+                } else {
+                    b.clone()
+                }
+            })
+            .unwrap_or_else(|| "-".to_string());
+
+        let summary = session
             .instructions
             .as_ref()
             .map(|s| {
-                let truncated = if s.len() > 60 {
-                    format!("{}...", &s[..57])
+                if s.len() > 50 {
+                    format!("{}...", &s[..47])
                 } else {
                     s.clone()
-                };
-                format!(" - {}", truncated)
+                }
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| "No summary available".to_string());
 
-        let time_ago = format_time_ago(session.last_modified);
+        let marker = if index == 0 { "❯" } else { " " };
 
         println!(
-            "  {}. {} ({} messages, {}{})",
+            "{} {}. {:10} {:10} {:>10} {:15} {}",
+            marker,
             index + 1,
-            &session.id.to_string()[..8],
+            modified_ago,
+            created_ago,
             session.message_count,
-            time_ago,
-            instructions_preview
+            git_branch,
+            summary
         );
     }
 
     println!();
+    println!("Use arrow keys to navigate and press Enter to select a session");
     println!("Use --resume <session_id> to resume a specific session");
     println!("Use --continue to resume the most recent session");
 }
