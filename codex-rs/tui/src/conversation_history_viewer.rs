@@ -102,14 +102,16 @@ impl ConversationHistoryViewer {
                 self.history_entries.push(format!("Loading message {}...", self.history_entries.len() + 1));
                 
                 // Request the actual entry from the backend
-                if let Some(log_id) = self.history_log_id {
-                    if !self.loading_entries.contains(&self.history_entries.len().saturating_sub(1)) {
-                        self.loading_entries.push(self.history_entries.len().saturating_sub(1));
-                        let op = Op::GetHistoryEntryRequest {
-                            log_id,
-                            offset: self.history_entries.len().saturating_sub(1),
-                        };
-                        self.app_event_tx.send(AppEvent::CodexOp(op));
+                if let Some(ref log_id_str) = self.history_log_id {
+                    if let Ok(log_id) = log_id_str.parse::<u64>() {
+                        if !self.loading_entries.contains(&self.history_entries.len().saturating_sub(1)) {
+                            self.loading_entries.push(self.history_entries.len().saturating_sub(1));
+                            let op = Op::GetHistoryEntryRequest {
+                                log_id,
+                                offset: self.history_entries.len().saturating_sub(1),
+                            };
+                            self.app_event_tx.send(AppEvent::CodexOp(op));
+                        }
                     }
                 }
             } else {
@@ -119,7 +121,7 @@ impl ConversationHistoryViewer {
     }
 
     pub fn on_history_entry_response(&mut self, log_id: String, offset: usize, entry: Option<String>) {
-        if Some(log_id) == self.history_log_id {
+        if Some(&log_id) == self.history_log_id.as_ref() {
             if let Some(entry_text) = entry {
                 if offset < self.history_entries.len() {
                     self.history_entries[offset] = entry_text;

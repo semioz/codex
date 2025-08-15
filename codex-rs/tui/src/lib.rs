@@ -419,8 +419,8 @@ async fn resume_session_at_path(
     codex_linux_sandbox_exe: Option<PathBuf>,
     session_path: PathBuf,
 ) -> std::io::Result<codex_core::protocol::TokenUsage> {
-    // Create a modified CLI with the resume path set in config overrides
-    let modified_cli = cli;
+    // Create a modified CLI config with the session resumption enabled
+    let mut modified_cli = cli;
     
     // Continue with the normal TUI flow
     let (sandbox_mode, approval_policy) = if modified_cli.full_auto {
@@ -475,30 +475,21 @@ async fn resume_session_at_path(
         show_raw_agent_reasoning: modified_cli.oss.then_some(true),
     };
 
-    // Parse `-c` overrides from the CLI.
-    let mut cli_kv_overrides = match modified_cli.config_overrides.parse_overrides() {
+    // Add the experimental_resume path to the CLI overrides by manually adding the raw override
+    modified_cli.config_overrides.raw_overrides.push(format!(
+        "experimental_resume=\"{}\""
+        , session_path.to_string_lossy()
+    ));
+    
+    // Parse `-c` overrides from the CLI (including our added override).
+    let cli_kv_overrides = match modified_cli.config_overrides.parse_overrides() {
         Ok(v) => v,
         #[allow(clippy::print_stderr)]
         Err(e) => {
-            eprintln!("Error parsing -c overrides: {e}");
+            eprintln!("Error parsing updated -c overrides: {e}");
             std::process::exit(1);
         }
     };
-
-    // Add the experimental_resume path to the CLI overrides as a string
-    let resume_value = format!("\"{}\"", session_path.to_string_lossy());
-    // Parse the string as a TOML value using the common crate's parser
-    let parsed_value = match toml::from_str::<toml::Value>(&resume_value) {
-        Ok(val) => val,
-        Err(e) => {
-            eprintln!("Error parsing resume path as TOML: {e}");
-            std::process::exit(1);
-        }
-    };
-    cli_kv_overrides.push((
-        "experimental_resume".to_string(),
-        parsed_value,
-    ));
 
     let mut config = {
         // Load configuration and support CLI overrides.
