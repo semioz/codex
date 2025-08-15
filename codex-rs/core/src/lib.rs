@@ -46,6 +46,7 @@ pub mod plan_tool;
 mod project_doc;
 pub mod protocol;
 mod rollout;
+pub mod session_manager;
 pub(crate) mod safety;
 pub mod seatbelt;
 pub mod shell;

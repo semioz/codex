@@ -60,4 +60,17 @@ pub(crate) enum AppEvent {
     /// Onboarding: result of login_with_chatgpt.
     OnboardingAuthComplete(Result<(), String>),
     OnboardingComplete(ChatWidgetArgs),
+
+    /// Request to load history entries for the conversation history viewer
+    RequestHistoryEntries {
+        log_id: String,
+        start: usize,
+        count: usize,
+    },
+
+    /// History entries loaded for the conversation history viewer
+    HistoryEntriesReceived {
+        log_id: String,
+        entries: Vec<String>,
+    },
 }

@@ -30,6 +30,7 @@ mod citation_regex;
 mod cli;
 mod colors;
 mod common;
+mod conversation_history_viewer;
 pub mod custom_terminal;
 mod diff_render;
 mod exec_command;
@@ -69,6 +70,11 @@ pub async fn run_main(
     cli: Cli,
     codex_linux_sandbox_exe: Option<PathBuf>,
 ) -> std::io::Result<codex_core::protocol::TokenUsage> {
+    // Handle session management commands first
+    if cli.continue_last || cli.resume_session.is_some() {
+        return handle_session_resume(cli, codex_linux_sandbox_exe).await;
+    }
+
     let (sandbox_mode, approval_policy) = if cli.full_auto {
         (
             Some(SandboxMode::WorkspaceWrite),
@@ -348,4 +354,234 @@ fn determine_repo_trust_state(
         // if none of the above conditions are met, show the trust screen
         Ok(true)
     }
+}
+
+async fn handle_session_resume(
+    cli: Cli,
+    codex_linux_sandbox_exe: Option<PathBuf>,
+) -> std::io::Result<codex_core::protocol::TokenUsage> {
+    use codex_core::session_manager::{list_sessions, get_last_session, find_session, print_session_list};
+
+    // Load basic config to access codex home directory
+    let config = {
+        #[allow(clippy::print_stderr)]
+        match Config::load_with_cli_overrides(Vec::new(), ConfigOverrides::default()) {
+            Ok(config) => config,
+            Err(err) => {
+                eprintln!("Error loading configuration: {err}");
+                std::process::exit(1);
+            }
+        }
+    };
+
+    if cli.continue_last {
+        // Resume the most recent session
+        match get_last_session(&config)? {
+            Some(session) => {
+                eprintln!("Resuming last session: {} ({} messages)", 
+                         &session.id.to_string()[..8], session.message_count);
+                resume_session_at_path(cli, codex_linux_sandbox_exe, session.path).await
+            }
+            None => {
+                eprintln!("No previous sessions found.");
+                std::process::exit(1);
+            }
+        }
+    } else if let Some(session_id_or_path) = &cli.resume_session {
+        if session_id_or_path == "list" {
+            // List all available sessions
+            let sessions = list_sessions(&config)?;
+            print_session_list(&sessions);
+            std::process::exit(0);
+        } else {
+            // Find and resume specific session
+            match find_session(&config, session_id_or_path)? {
+                Some(path) => {
+                    eprintln!("Resuming session from: {}", path.display());
+                    resume_session_at_path(cli, codex_linux_sandbox_exe, path).await
+                }
+                None => {
+                    eprintln!("Session not found: {}", session_id_or_path);
+                    eprintln!("Use --resume list to see available sessions");
+                    std::process::exit(1);
+                }
+            }
+        }
+    } else {
+        // This shouldn't happen given the check in run_main
+        eprintln!("No session specified for resume");
+        std::process::exit(1);
+    }
+}
+
+async fn resume_session_at_path(
+    cli: Cli,
+    codex_linux_sandbox_exe: Option<PathBuf>,
+    session_path: PathBuf,
+) -> std::io::Result<codex_core::protocol::TokenUsage> {
+    // Create a modified CLI with the resume path set in config overrides
+    let modified_cli = cli;
+    
+    // Continue with the normal TUI flow
+    let (sandbox_mode, approval_policy) = if modified_cli.full_auto {
+        (
+            Some(SandboxMode::WorkspaceWrite),
+            Some(AskForApproval::OnFailure),
+        )
+    } else if modified_cli.dangerously_bypass_approvals_and_sandbox {
+        (
+            Some(SandboxMode::DangerFullAccess),
+            Some(AskForApproval::Never),
+        )
+    } else {
+        (
+            modified_cli.sandbox_mode.map(Into::<SandboxMode>::into),
+            modified_cli.approval_policy.map(Into::into),
+        )
+    };
+
+    // When using `--oss`, let the bootstrapper pick the model (defaulting to
+    // gpt-oss:20b) and ensure it is present locally. Also, force the built‑in
+    // `oss` model provider.
+    let model = if let Some(model) = &modified_cli.model {
+        Some(model.clone())
+    } else if modified_cli.oss {
+        Some(DEFAULT_OSS_MODEL.to_owned())
+    } else {
+        None // No model specified, will use the default.
+    };
+
+    let model_provider_override = if modified_cli.oss {
+        Some(BUILT_IN_OSS_MODEL_PROVIDER_ID.to_owned())
+    } else {
+        None
+    };
+
+    // canonicalize the cwd
+    let cwd = modified_cli.cwd.clone().map(|p| p.canonicalize().unwrap_or(p));
+
+    let overrides = ConfigOverrides {
+        model,
+        approval_policy,
+        sandbox_mode,
+        cwd,
+        model_provider: model_provider_override,
+        config_profile: modified_cli.config_profile.clone(),
+        codex_linux_sandbox_exe,
+        base_instructions: None,
+        include_plan_tool: Some(true),
+        include_apply_patch_tool: None,
+        disable_response_storage: modified_cli.oss.then_some(true),
+        show_raw_agent_reasoning: modified_cli.oss.then_some(true),
+    };
+
+    // Parse `-c` overrides from the CLI.
+    let mut cli_kv_overrides = match modified_cli.config_overrides.parse_overrides() {
+        Ok(v) => v,
+        #[allow(clippy::print_stderr)]
+        Err(e) => {
+            eprintln!("Error parsing -c overrides: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Add the experimental_resume path to the CLI overrides as a string
+    let resume_value = format!("\"{}\"", session_path.to_string_lossy());
+    // Parse the string as a TOML value using the common crate's parser
+    let parsed_value = match toml::from_str::<toml::Value>(&resume_value) {
+        Ok(val) => val,
+        Err(e) => {
+            eprintln!("Error parsing resume path as TOML: {e}");
+            std::process::exit(1);
+        }
+    };
+    cli_kv_overrides.push((
+        "experimental_resume".to_string(),
+        parsed_value,
+    ));
+
+    let mut config = {
+        // Load configuration and support CLI overrides.
+
+        #[allow(clippy::print_stderr)]
+        match Config::load_with_cli_overrides(cli_kv_overrides.clone(), overrides) {
+            Ok(config) => config,
+            Err(err) => {
+                eprintln!("Error loading configuration: {err}");
+                std::process::exit(1);
+            }
+        }
+    };
+
+    // we load config.toml here to determine project state.
+    #[allow(clippy::print_stderr)]
+    let config_toml = {
+        let codex_home = match find_codex_home() {
+            Ok(codex_home) => codex_home,
+            Err(err) => {
+                eprintln!("Error finding codex home: {err}");
+                std::process::exit(1);
+            }
+        };
+
+        match load_config_as_toml_with_cli_overrides(&codex_home, cli_kv_overrides) {
+            Ok(config_toml) => config_toml,
+            Err(err) => {
+                eprintln!("Error loading config.toml: {err}");
+                std::process::exit(1);
+            }
+        }
+    };
+
+    let should_show_trust_screen = determine_repo_trust_state(
+        &mut config,
+        &config_toml,
+        approval_policy,
+        sandbox_mode,
+        modified_cli.config_profile.clone(),
+    )?;
+
+    let log_dir = codex_core::config::log_dir(&config)?;
+    std::fs::create_dir_all(&log_dir)?;
+    // Open (or create) your log file, appending to it.
+    let mut log_file_opts = OpenOptions::new();
+    log_file_opts.create(true).append(true);
+
+    // Ensure the file is only readable and writable by the current user.
+    // Doing the equivalent to `chmod 600` on Windows is quite a bit more code
+    // and requires the Windows API crates, so we can reconsider that when
+    // Codex CLI is officially supported on Windows.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        log_file_opts.mode(0o600);
+    }
+
+    let log_file = log_file_opts.open(log_dir.join("codex-tui.log"))?;
+
+    // Wrap file in non‑blocking writer.
+    let (non_blocking, _guard) = non_blocking(log_file);
+
+    // use RUST_LOG env var, default to info for codex crates.
+    let env_filter = || {
+        EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("codex_core=info,codex_tui=info"))
+    };
+
+    // Build layered subscriber:
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(non_blocking)
+        .with_target(false)
+        .with_filter(env_filter());
+
+    if modified_cli.oss {
+        codex_ollama::ensure_oss_ready(&config)
+            .await
+            .map_err(|e| std::io::Error::other(format!("OSS setup failed: {e}")))?;
+    }
+
+    let _ = tracing_subscriber::registry().with(file_layer).try_init();
+
+    run_ratatui_app(modified_cli, config, should_show_trust_screen)
+        .map_err(|err| std::io::Error::other(err.to_string()))
 }

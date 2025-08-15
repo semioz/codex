@@ -43,6 +43,7 @@ use crate::bottom_pane::BottomPane;
 use crate::bottom_pane::BottomPaneParams;
 use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::InputResult;
+use crate::conversation_history_viewer::ConversationHistoryViewer;
 use crate::history_cell;
 use crate::history_cell::CommandOutput;
 use crate::history_cell::ExecCell;
@@ -59,6 +60,7 @@ use crate::streaming::controller::StreamController;
 use codex_core::ConversationManager;
 use codex_file_search::FileMatch;
 use uuid::Uuid;
+use crossterm::event::KeyCode;
 
 // Track information about an in-flight exec command.
 struct RunningCommand {
@@ -87,6 +89,12 @@ pub(crate) struct ChatWidget<'a> {
     // Whether a redraw is needed after handling the current event
     needs_redraw: bool,
     session_id: Option<Uuid>,
+    // Track consecutive escape key presses for history viewer
+    last_key_was_escape: bool,
+    // History viewer state
+    history_viewer: Option<ConversationHistoryViewer>,
+    history_log_id: Option<String>,
+    history_entry_count: usize,
 }
 
 struct UserMessage {
@@ -520,6 +528,10 @@ impl ChatWidget<'_> {
             interrupts: InterruptManager::new(),
             needs_redraw: false,
             session_id: None,
+            last_key_was_escape: false,
+            history_viewer: None,
+            history_log_id: None,
+            history_entry_count: 0,
         }
     }
 
@@ -531,9 +543,25 @@ impl ChatWidget<'_> {
                 .map_or(0, |c| c.desired_height(width))
     }
 
-    pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) {
+    pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) -> Option<AppEvent> {
         if key_event.kind == KeyEventKind::Press {
             self.bottom_pane.clear_ctrl_c_quit_hint();
+            
+            // If history viewer is active, let it handle the key first
+            if let Some(ref mut viewer) = self.history_viewer {
+                viewer.handle_key_event(key_event);
+                if viewer.is_complete() {
+                    self.history_viewer = None;
+                }
+                return None;
+            }
+            
+            // Handle Esc+Esc for history viewer
+            if key_event.code == KeyCode::Esc {
+                return self.handle_escape_key();
+            } else {
+                self.last_key_was_escape = false;
+            }
         }
 
         match self.bottom_pane.handle_key_event(key_event) {
@@ -542,6 +570,7 @@ impl ChatWidget<'_> {
             }
             InputResult::None => {}
         }
+        None
     }
 
     pub(crate) fn handle_paste(&mut self, text: String) {
@@ -743,6 +772,40 @@ impl ChatWidget<'_> {
         let [_, bottom_pane_area] = self.layout_areas(area);
         self.bottom_pane.cursor_pos(bottom_pane_area)
     }
+
+    fn show_conversation_history(&mut self) -> Option<AppEvent> {
+        if let (Some(log_id), entry_count) = (&self.history_log_id, self.history_entry_count) {
+            if entry_count > 0 {
+                self.history_viewer = Some(ConversationHistoryViewer::new(
+                    self.app_event_tx.clone(),
+                    Some(log_id.clone()),
+                    entry_count
+                ));
+                return Some(AppEvent::RequestHistoryEntries { 
+                    log_id: log_id.clone(), 
+                    start: 0, 
+                    count: entry_count 
+                });
+            }
+        }
+        None
+    }
+
+    fn handle_escape_key(&mut self) -> Option<AppEvent> {
+        if self.last_key_was_escape {
+            // Double escape detected - show conversation history
+            self.last_key_was_escape = false;
+            return self.show_conversation_history();
+        } else {
+            self.last_key_was_escape = true;
+            return None;
+        }
+    }
+
+    fn handle_session_configured(&mut self, log_id: String, entry_count: usize) {
+        self.history_log_id = Some(log_id);
+        self.history_entry_count = entry_count;
+    }
 }
 
 impl WidgetRef for &ChatWidget<'_> {
@@ -751,6 +814,11 @@ impl WidgetRef for &ChatWidget<'_> {
         (&self.bottom_pane).render(bottom_pane_area, buf);
         if let Some(cell) = &self.active_exec_cell {
             cell.render_ref(active_cell_area, buf);
+        }
+        
+        // Render history viewer on top if active
+        if let Some(ref viewer) = self.history_viewer {
+            viewer.render_ref(area, buf);
         }
     }
 }

@@ -490,6 +490,26 @@ impl App<'_> {
                         widget.apply_file_search_result(query, matches);
                     }
                 }
+                AppEvent::RequestHistoryEntries { log_id, start, count } => {
+                    // For now, just mock the entries - in a real implementation,
+                    // you would load these from the session history
+                    let entries = (start..start + count.min(10))
+                        .map(|i| format!("History entry {} for session {}", i, log_id))
+                        .collect();
+                    
+                    self.app_event_tx.send(AppEvent::HistoryEntriesReceived {
+                        log_id,
+                        entries,
+                    });
+                }
+                AppEvent::HistoryEntriesReceived { log_id: _, entries: _ } => {
+                    if let AppState::Chat { widget: _ } = &mut self.app_state {
+                        // Update the history viewer with the loaded entries
+                        // This would need a method on ChatWidget to forward to the history viewer
+                        // For now, we'll just trigger a redraw
+                        self.app_event_tx.send(AppEvent::RequestRedraw);
+                    }
+                }
             }
         }
         terminal.clear()?;
@@ -589,7 +609,9 @@ impl App<'_> {
     fn dispatch_key_event(&mut self, key_event: KeyEvent) {
         match &mut self.app_state {
             AppState::Chat { widget } => {
-                widget.handle_key_event(key_event);
+                if let Some(app_event) = widget.handle_key_event(key_event) {
+                    self.app_event_tx.send(app_event);
+                }
             }
             AppState::Onboarding { screen } => match key_event.code {
                 KeyCode::Char('q') => {
