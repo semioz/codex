@@ -548,8 +548,10 @@ impl ChatWidget<'_> {
         }
     }
 
-    /// Update available custom commands
-    pub(crate) fn update_custom_commands(&mut self, custom_commands: Vec<crate::custom_commands::CustomSlashCommand>) {
+    pub(crate) fn update_custom_commands(
+        &mut self,
+        custom_commands: Vec<crate::custom_commands::CustomSlashCommand>,
+    ) {
         self.bottom_pane.update_custom_commands(custom_commands);
     }
 

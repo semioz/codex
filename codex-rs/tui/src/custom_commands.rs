@@ -22,14 +22,6 @@ pub enum CommandSource {
 }
 
 impl CustomSlashCommand {
-    /// Get the display name for the command (includes subdirectory if present)
-    pub fn display_name(&self) -> String {
-        match &self.subdirectory {
-            Some(subdir) => format!("{} ({})", self.name, subdir),
-            None => self.name.clone(),
-        }
-    }
-
     /// Get the description with source indicator
     pub fn description(&self) -> String {
         let source_indicator = match self.source {
@@ -162,31 +154,13 @@ impl CustomCommandManager {
     pub fn get_commands(&self) -> Vec<&CustomSlashCommand> {
         self.commands.values().collect()
     }
-
-    /// Get a specific command by name
-    pub fn get_command(&self, name: &str) -> Option<&CustomSlashCommand> {
-        self.commands.get(name)
-    }
-
-    /// Check if a command exists
-    pub fn has_command(&self, name: &str) -> bool {
-        self.commands.contains_key(name)
-    }
 }
 
 /// Check if a command name conflicts with built-in commands
 fn is_builtin_command(name: &str) -> bool {
     matches!(
         name,
-        "new"
-            | "init"
-            | "compact"
-            | "diff"
-            | "mention"
-            | "status"
-            | "logout"
-            | "quit"
-            | "test-approval"
+        "new" | "init" | "compact" | "diff" | "mention" | "status" | "logout" | "quit" | "prompts"
     )
 }
 
@@ -203,7 +177,7 @@ mod tests {
             subdirectory: None,
         };
 
-        assert_eq!(cmd.display_name(), "test");
+        assert_eq!(cmd.name, "test");
         assert_eq!(cmd.get_prompt("hello"), "This is a test command with hello");
         assert_eq!(cmd.get_prompt(""), "This is a test command with $ARGUMENTS");
     }
@@ -217,7 +191,7 @@ mod tests {
             subdirectory: Some("frontend".to_string()),
         };
 
-        assert_eq!(cmd.display_name(), "component (frontend)");
+        assert_eq!(cmd.name, "component");
         assert!(cmd.description().contains("(project)"));
     }
 

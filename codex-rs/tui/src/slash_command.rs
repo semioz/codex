@@ -77,22 +77,6 @@ impl SlashCommand {
             SlashCommand::Custom(custom) => custom.name.clone(),
         }
     }
-
-    /// Get the prompt content for custom commands, or None for built-in commands
-    pub fn get_custom_prompt(&self, arguments: &str) -> Option<String> {
-        match self {
-            SlashCommand::BuiltIn(_) => None,
-            SlashCommand::Custom(custom) => Some(custom.get_prompt(arguments)),
-        }
-    }
-
-    pub fn is_builtin(&self) -> bool {
-        matches!(self, SlashCommand::BuiltIn(_))
-    }
-
-    pub fn is_custom(&self) -> bool {
-        matches!(self, SlashCommand::Custom(_))
-    }
 }
 
 /// Return all built-in commands in a Vec paired with their command string.
