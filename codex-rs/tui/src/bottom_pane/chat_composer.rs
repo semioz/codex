@@ -277,9 +277,18 @@ impl ChatComposer {
                 ..
             } => {
                 if let Some(cmd) = popup.selected_command() {
-                    // Send command to the app layer.
+                    let first_line = self.textarea.text().lines().next().unwrap_or("");
+                    let command_text = first_line.trim_start();
+                    let command_name = format!("/{}", cmd.command());
+
+                    let arguments = if command_text.starts_with(&command_name) {
+                        command_text[command_name.len()..].trim().to_string()
+                    } else {
+                        String::new()
+                    };
+
                     self.app_event_tx
-                        .send(AppEvent::DispatchCommand(cmd.clone()));
+                        .send(AppEvent::DispatchCommand(cmd.clone(), arguments));
 
                     // Clear textarea so no residual text remains.
                     self.textarea.set_text("");
@@ -1060,8 +1069,9 @@ mod tests {
 
         // Verify a DispatchCommand event for the "init" command was sent.
         match rx.try_recv() {
-            Ok(AppEvent::DispatchCommand(cmd)) => {
+            Ok(AppEvent::DispatchCommand(cmd, arguments)) => {
                 assert_eq!(cmd.command(), "init");
+                assert_eq!(arguments, ""); // init command should have no arguments
             }
             Ok(_other) => panic!("unexpected app event"),
             Err(TryRecvError::Empty) => panic!("expected a DispatchCommand event for '/init'"),
@@ -1097,8 +1107,9 @@ mod tests {
         assert!(composer.textarea.is_empty(), "composer should be cleared");
 
         match rx.try_recv() {
-            Ok(AppEvent::DispatchCommand(cmd)) => {
+            Ok(AppEvent::DispatchCommand(cmd, arguments)) => {
                 assert_eq!(cmd.command(), "mention");
+                assert_eq!(arguments, ""); // mention command should have no arguments
                 composer.insert_str("@");
             }
             Ok(_other) => panic!("unexpected app event"),

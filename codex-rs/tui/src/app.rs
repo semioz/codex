@@ -369,7 +369,7 @@ impl App<'_> {
                         widget.add_diff_output(text);
                     }
                 }
-                AppEvent::DispatchCommand(command) => match command {
+                AppEvent::DispatchCommand(command, arguments) => match command {
                     SlashCommand::BuiltIn(builtin_cmd) => match builtin_cmd {
                         crate::slash_command::BuiltInSlashCommand::New => {
                             // User accepted – switch to chat view.
@@ -493,9 +493,7 @@ impl App<'_> {
                     SlashCommand::Custom(custom_cmd) => {
                         // Handle custom commands by extracting arguments and submitting the prompt
                         if let AppState::Chat { widget } = &mut self.app_state {
-                            // For now, we don't have access to the original command line with arguments
-                            // In a full implementation, we'd need to pass the raw command text
-                            let prompt = custom_cmd.get_prompt("");
+                            let prompt = custom_cmd.get_prompt(&arguments);
                             widget.submit_text_message(prompt);
                         }
                     }
