@@ -30,6 +30,7 @@ mod citation_regex;
 mod cli;
 mod colors;
 mod common;
+mod custom_commands;
 pub mod custom_terminal;
 mod diff_render;
 mod exec_command;

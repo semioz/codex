@@ -28,6 +28,7 @@ use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::textarea::TextArea;
 use crate::bottom_pane::textarea::TextAreaState;
+use crate::custom_commands::CustomSlashCommand;
 use codex_file_search::FileMatch;
 use std::cell::RefCell;
 
@@ -61,6 +62,7 @@ pub(crate) struct ChatComposer {
     token_usage_info: Option<TokenUsageInfo>,
     has_focus: bool,
     placeholder_text: String,
+    custom_commands: Vec<CustomSlashCommand>,
 }
 
 /// Popup state – at most one can be visible at any time.
@@ -93,6 +95,7 @@ impl ChatComposer {
             token_usage_info: None,
             has_focus: has_input_focus,
             placeholder_text,
+            custom_commands: Vec::new(),
         }
     }
 
@@ -200,6 +203,13 @@ impl ChatComposer {
         self.set_has_focus(has_focus);
     }
 
+    pub(crate) fn update_custom_commands(&mut self, custom_commands: Vec<CustomSlashCommand>) {
+        self.custom_commands = custom_commands;
+        if let ActivePopup::Command(popup) = &mut self.active_popup {
+            popup.update_commands(self.custom_commands.clone());
+        }
+    }
+
     pub(crate) fn insert_str(&mut self, text: &str) {
         self.textarea.insert_str(text);
         self.sync_command_popup();
@@ -268,7 +278,8 @@ impl ChatComposer {
             } => {
                 if let Some(cmd) = popup.selected_command() {
                     // Send command to the app layer.
-                    self.app_event_tx.send(AppEvent::DispatchCommand(*cmd));
+                    self.app_event_tx
+                        .send(AppEvent::DispatchCommand(cmd.clone()));
 
                     // Clear textarea so no residual text remains.
                     self.textarea.set_text("");
@@ -562,6 +573,8 @@ impl ChatComposer {
             _ => {
                 if input_starts_with_slash {
                     let mut command_popup = CommandPopup::new();
+                    // Update the popup with custom commands immediately after creation
+                    command_popup.update_commands(self.custom_commands.clone());
                     command_popup.on_composer_text_change(first_line.to_string());
                     self.active_popup = ActivePopup::Command(command_popup);
                 }

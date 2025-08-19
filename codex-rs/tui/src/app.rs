@@ -1,6 +1,7 @@
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::chatwidget::ChatWidget;
+use crate::custom_commands::CustomCommandManager;
 use crate::file_search::FileSearchManager;
 use crate::get_git_diff::get_git_diff;
 use crate::onboarding::onboarding_screen::KeyboardHandler;
@@ -59,6 +60,8 @@ pub(crate) struct App<'a> {
     config: Config,
 
     file_search: FileSearchManager,
+
+    custom_command_manager: CustomCommandManager,
 
     pending_history_lines: Vec<Line<'static>>,
 
@@ -138,6 +141,14 @@ impl App<'_> {
         }
 
         let show_login_screen = should_show_login_screen(&config);
+        let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
+
+        // Initialize custom command manager and load commands
+        let mut custom_command_manager = CustomCommandManager::new();
+        if let Err(e) = custom_command_manager.load_commands(&config.codex_home, &config.cwd) {
+            tracing::warn!("Failed to load custom commands: {}", e);
+        }
+
         let app_state = if show_login_screen || show_trust_screen {
             let chat_widget_args = ChatWidgetArgs {
                 config: config.clone(),
@@ -156,7 +167,7 @@ impl App<'_> {
                 }),
             }
         } else {
-            let chat_widget = ChatWidget::new(
+            let mut chat_widget = ChatWidget::new(
                 config.clone(),
                 conversation_manager.clone(),
                 app_event_tx.clone(),
@@ -164,12 +175,15 @@ impl App<'_> {
                 initial_images,
                 enhanced_keys_supported,
             );
+            
+            // Load and apply custom commands
+            let custom_commands: Vec<_> = custom_command_manager.get_commands().into_iter().cloned().collect();
+            chat_widget.update_custom_commands(custom_commands);
+            
             AppState::Chat {
                 widget: Box::new(chat_widget),
             }
         };
-
-        let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
 
         // Spawn a single scheduler thread that coalesces both debounced redraw
         // requests and animation frame requests, and emits a single Redraw event
@@ -219,6 +233,7 @@ impl App<'_> {
             app_state,
             config,
             file_search,
+            custom_command_manager,
             enhanced_keys_supported,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             frame_schedule_tx: frame_tx,
@@ -351,81 +366,87 @@ impl App<'_> {
                     }
                 }
                 AppEvent::DispatchCommand(command) => match command {
-                    SlashCommand::New => {
-                        // User accepted – switch to chat view.
-                        let new_widget = Box::new(ChatWidget::new(
-                            self.config.clone(),
-                            self.server.clone(),
-                            self.app_event_tx.clone(),
-                            None,
-                            Vec::new(),
-                            self.enhanced_keys_supported,
-                        ));
-                        self.app_state = AppState::Chat { widget: new_widget };
-                        self.app_event_tx.send(AppEvent::RequestRedraw);
-                    }
-                    SlashCommand::Init => {
-                        // Guard: do not run if a task is active.
-                        if let AppState::Chat { widget } = &mut self.app_state {
-                            const INIT_PROMPT: &str = include_str!("../prompt_for_init_command.md");
-                            widget.submit_text_message(INIT_PROMPT.to_string());
+                    SlashCommand::BuiltIn(builtin_cmd) => match builtin_cmd {
+                        crate::slash_command::BuiltInSlashCommand::New => {
+                            // User accepted – switch to chat view.
+                            let mut new_widget = ChatWidget::new(
+                                self.config.clone(),
+                                self.server.clone(),
+                                self.app_event_tx.clone(),
+                                None,
+                                Vec::new(),
+                                self.enhanced_keys_supported,
+                            );
+                            
+                            // Load and apply custom commands
+                            let custom_commands: Vec<_> = self.custom_command_manager.get_commands().into_iter().cloned().collect();
+                            new_widget.update_custom_commands(custom_commands);
+                            
+                            self.app_state = AppState::Chat { widget: Box::new(new_widget) };
+                            self.app_event_tx.send(AppEvent::RequestRedraw);
                         }
-                    }
-                    SlashCommand::Compact => {
-                        if let AppState::Chat { widget } = &mut self.app_state {
-                            widget.clear_token_usage();
-                            self.app_event_tx.send(AppEvent::CodexOp(Op::Compact));
+                        crate::slash_command::BuiltInSlashCommand::Init => {
+                            // Guard: do not run if a task is active.
+                            if let AppState::Chat { widget } = &mut self.app_state {
+                                const INIT_PROMPT: &str = include_str!("../prompt_for_init_command.md");
+                                widget.submit_text_message(INIT_PROMPT.to_string());
+                            }
                         }
-                    }
-                    SlashCommand::Quit => {
-                        break;
-                    }
-                    SlashCommand::Logout => {
-                        if let Err(e) = codex_login::logout(&self.config.codex_home) {
-                            tracing::error!("failed to logout: {e}");
+                        crate::slash_command::BuiltInSlashCommand::Compact => {
+                            if let AppState::Chat { widget } = &mut self.app_state {
+                                widget.clear_token_usage();
+                                self.app_event_tx.send(AppEvent::CodexOp(Op::Compact));
+                            }
                         }
-                        break;
-                    }
-                    SlashCommand::Diff => {
-                        if let AppState::Chat { widget } = &mut self.app_state {
-                            widget.add_diff_in_progress();
+                        crate::slash_command::BuiltInSlashCommand::Quit => {
+                            break;
                         }
+                        crate::slash_command::BuiltInSlashCommand::Logout => {
+                            if let Err(e) = codex_login::logout(&self.config.codex_home) {
+                                tracing::error!("failed to logout: {e}");
+                            }
+                            break;
+                        }
+                        crate::slash_command::BuiltInSlashCommand::Diff => {
+                            if let AppState::Chat { widget } = &mut self.app_state {
+                                widget.add_diff_in_progress();
+                            }
 
-                        let tx = self.app_event_tx.clone();
-                        tokio::spawn(async move {
-                            let text = match get_git_diff().await {
-                                Ok((is_git_repo, diff_text)) => {
-                                    if is_git_repo {
-                                        diff_text
-                                    } else {
-                                        "`/diff` — _not inside a git repository_".to_string()
+                            let tx = self.app_event_tx.clone();
+                            tokio::spawn(async move {
+                                let text = match get_git_diff().await {
+                                    Ok((is_git_repo, diff_text)) => {
+                                        if is_git_repo {
+                                            diff_text
+                                        } else {
+                                            "`/diff` — _not inside a git repository_".to_string()
+                                        }
                                     }
-                                }
-                                Err(e) => format!("Failed to compute diff: {e}"),
-                            };
-                            tx.send(AppEvent::DiffResult(text));
-                        });
-                    }
-                    SlashCommand::Mention => {
-                        if let AppState::Chat { widget } = &mut self.app_state {
-                            widget.insert_str("@");
+                                    Err(e) => format!("Failed to compute diff: {e}"),
+                                };
+                                tx.send(AppEvent::DiffResult(text));
+                            });
                         }
-                    }
-                    SlashCommand::Status => {
-                        if let AppState::Chat { widget } = &mut self.app_state {
-                            widget.add_status_output();
+                        crate::slash_command::BuiltInSlashCommand::Mention => {
+                            if let AppState::Chat { widget } = &mut self.app_state {
+                                widget.insert_str("@");
+                            }
                         }
-                    }
-                    #[cfg(debug_assertions)]
-                    SlashCommand::TestApproval => {
-                        use codex_core::protocol::EventMsg;
-                        use std::collections::HashMap;
+                        crate::slash_command::BuiltInSlashCommand::Status => {
+                            if let AppState::Chat { widget } = &mut self.app_state {
+                                widget.add_status_output();
+                            }
+                        }
+                        #[cfg(debug_assertions)]
+                        crate::slash_command::BuiltInSlashCommand::TestApproval => {
+                            use codex_core::protocol::EventMsg;
+                            use std::collections::HashMap;
 
-                        use codex_core::protocol::ApplyPatchApprovalRequestEvent;
-                        use codex_core::protocol::FileChange;
+                            use codex_core::protocol::ApplyPatchApprovalRequestEvent;
+                            use codex_core::protocol::FileChange;
 
-                        self.app_event_tx.send(AppEvent::CodexEvent(Event {
-                            id: "1".to_string(),
+                            self.app_event_tx.send(AppEvent::CodexEvent(Event {
+                                id: "1".to_string(),
                             // msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
                             //     call_id: "1".to_string(),
                             //     command: vec!["git".into(), "apply".into()],
@@ -455,8 +476,18 @@ impl App<'_> {
                                 },
                             ),
                         }));
+                        }
                     }
-                },
+                    SlashCommand::Custom(custom_cmd) => {
+                        // Handle custom commands by extracting arguments and submitting the prompt
+                        if let AppState::Chat { widget } = &mut self.app_state {
+                            // For now, we don't have access to the original command line with arguments
+                            // In a full implementation, we'd need to pass the raw command text
+                            let prompt = custom_cmd.get_prompt("");
+                            widget.submit_text_message(prompt);
+                        }
+                    }
+                }
                 AppEvent::OnboardingAuthComplete(result) => {
                     if let AppState::Onboarding { screen } = &mut self.app_state {
                         screen.on_auth_complete(result);
@@ -468,15 +499,21 @@ impl App<'_> {
                     initial_images,
                     initial_prompt,
                 }) => {
+                    let mut chat_widget = ChatWidget::new(
+                        config,
+                        self.server.clone(),
+                        self.app_event_tx.clone(),
+                        initial_prompt,
+                        initial_images,
+                        enhanced_keys_supported,
+                    );
+                    
+                    // Load and apply custom commands
+                    let custom_commands: Vec<_> = self.custom_command_manager.get_commands().into_iter().cloned().collect();
+                    chat_widget.update_custom_commands(custom_commands);
+                    
                     self.app_state = AppState::Chat {
-                        widget: Box::new(ChatWidget::new(
-                            config,
-                            self.server.clone(),
-                            self.app_event_tx.clone(),
-                            initial_prompt,
-                            initial_images,
-                            enhanced_keys_supported,
-                        )),
+                        widget: Box::new(chat_widget),
                     }
                 }
                 AppEvent::StartFileSearch(query) => {

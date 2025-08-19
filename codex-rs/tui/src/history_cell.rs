@@ -2,7 +2,6 @@ use crate::colors::LIGHT_BLUE;
 use crate::diff_render::create_diff_summary;
 use crate::exec_command::relativize_to_home;
 use crate::exec_command::strip_bash_lc_and_escape;
-use crate::slash_command::SlashCommand;
 use crate::text_formatting::format_and_truncate_tool_result;
 use base64::Engine;
 use codex_ansi_escape::ansi_escape_line;
@@ -167,9 +166,9 @@ pub(crate) fn new_session_info(
             Line::from("".dim()),
             Line::from(" To get started, describe a task or try one of these commands:".dim()),
             Line::from("".dim()),
-            Line::from(format!(" /init - {}", SlashCommand::Init.description()).dim()),
-            Line::from(format!(" /status - {}", SlashCommand::Status.description()).dim()),
-            Line::from(format!(" /diff - {}", SlashCommand::Diff.description()).dim()),
+            Line::from(format!(" /init - {}", crate::slash_command::BuiltInSlashCommand::Init.description()).dim()),
+            Line::from(format!(" /status - {}", crate::slash_command::BuiltInSlashCommand::Status.description()).dim()),
+            Line::from(format!(" /diff - {}", crate::slash_command::BuiltInSlashCommand::Diff.description()).dim()),
             Line::from("".dim()),
         ];
         PlainHistoryCell { lines }

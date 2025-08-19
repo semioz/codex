@@ -189,6 +189,11 @@ impl BottomPane<'_> {
         self.ctrl_c_quit_hint
     }
 
+    /// Update available custom commands
+    pub(crate) fn update_custom_commands(&mut self, custom_commands: Vec<crate::custom_commands::CustomSlashCommand>) {
+        self.composer.update_custom_commands(custom_commands);
+    }
+
     pub fn set_task_running(&mut self, running: bool) {
         self.is_task_running = running;
 

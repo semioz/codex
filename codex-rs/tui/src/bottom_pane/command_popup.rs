@@ -8,11 +8,12 @@ use super::selection_popup_common::GenericDisplayRow;
 use super::selection_popup_common::render_rows;
 use crate::slash_command::SlashCommand;
 use crate::slash_command::built_in_slash_commands;
+use crate::custom_commands::CustomSlashCommand;
 use codex_common::fuzzy_match::fuzzy_match;
 
 pub(crate) struct CommandPopup {
     command_filter: String,
-    all_commands: Vec<(&'static str, SlashCommand)>,
+    all_commands: Vec<(String, SlashCommand)>,
     state: ScrollState,
 }
 
@@ -20,9 +21,17 @@ impl CommandPopup {
     pub(crate) fn new() -> Self {
         Self {
             command_filter: String::new(),
-            all_commands: built_in_slash_commands(),
+            all_commands: built_in_slash_commands()
+                .into_iter()
+                .map(|(name, cmd)| (name.to_string(), cmd))
+                .collect(),
             state: ScrollState::new(),
         }
+    }
+
+    /// Update the available commands with both built-in and custom commands
+    pub(crate) fn update_commands(&mut self, custom_commands: Vec<CustomSlashCommand>) {
+        self.all_commands = crate::slash_command::all_slash_commands(custom_commands);
     }
 
     /// Update the filter string based on the current composer text. The text
@@ -73,12 +82,12 @@ impl CommandPopup {
             }
         } else {
             for (_, cmd) in self.all_commands.iter() {
-                if let Some((indices, score)) = fuzzy_match(cmd.command(), filter) {
+                if let Some((indices, score)) = fuzzy_match(&cmd.command(), filter) {
                     out.push((cmd, Some(indices), score));
                 }
             }
         }
-        out.sort_by(|a, b| a.2.cmp(&b.2).then_with(|| a.0.command().cmp(b.0.command())));
+        out.sort_by(|a, b| a.2.cmp(&b.2).then_with(|| a.0.command().cmp(&b.0.command())));
         out
     }
 
@@ -124,7 +133,7 @@ impl WidgetRef for CommandPopup {
                     name: format!("/{}", cmd.command()),
                     match_indices: indices.map(|v| v.into_iter().map(|i| i + 1).collect()),
                     is_current: false,
-                    description: Some(cmd.description().to_string()),
+                    description: Some(cmd.description()),
                 })
                 .collect()
         };
