@@ -6,9 +6,9 @@ use super::popup_consts::MAX_POPUP_ROWS;
 use super::scroll_state::ScrollState;
 use super::selection_popup_common::GenericDisplayRow;
 use super::selection_popup_common::render_rows;
+use crate::custom_commands::CustomSlashCommand;
 use crate::slash_command::SlashCommand;
 use crate::slash_command::built_in_slash_commands;
-use crate::custom_commands::CustomSlashCommand;
 use codex_common::fuzzy_match::fuzzy_match;
 
 pub(crate) struct CommandPopup {
@@ -87,7 +87,10 @@ impl CommandPopup {
                 }
             }
         }
-        out.sort_by(|a, b| a.2.cmp(&b.2).then_with(|| a.0.command().cmp(&b.0.command())));
+        out.sort_by(|a, b| {
+            a.2.cmp(&b.2)
+                .then_with(|| a.0.command().cmp(&b.0.command()))
+        });
         out
     }
 

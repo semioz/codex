@@ -166,9 +166,27 @@ pub(crate) fn new_session_info(
             Line::from("".dim()),
             Line::from(" To get started, describe a task or try one of these commands:".dim()),
             Line::from("".dim()),
-            Line::from(format!(" /init - {}", crate::slash_command::BuiltInSlashCommand::Init.description()).dim()),
-            Line::from(format!(" /status - {}", crate::slash_command::BuiltInSlashCommand::Status.description()).dim()),
-            Line::from(format!(" /diff - {}", crate::slash_command::BuiltInSlashCommand::Diff.description()).dim()),
+            Line::from(
+                format!(
+                    " /init - {}",
+                    crate::slash_command::BuiltInSlashCommand::Init.description()
+                )
+                .dim(),
+            ),
+            Line::from(
+                format!(
+                    " /status - {}",
+                    crate::slash_command::BuiltInSlashCommand::Status.description()
+                )
+                .dim(),
+            ),
+            Line::from(
+                format!(
+                    " /diff - {}",
+                    crate::slash_command::BuiltInSlashCommand::Diff.description()
+                )
+                .dim(),
+            ),
             Line::from("".dim()),
         ];
         PlainHistoryCell { lines }

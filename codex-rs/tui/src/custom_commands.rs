@@ -33,9 +33,9 @@ impl CustomSlashCommand {
         let first_line = self.content.lines().next().unwrap_or("").trim();
 
         if first_line.is_empty() {
-            format!("Custom command {}", source_indicator)
+            format!("Custom command {source_indicator}")
         } else {
-            format!("{} {}", first_line, source_indicator)
+            format!("{first_line} {source_indicator}")
         }
     }
 
@@ -104,7 +104,7 @@ impl CustomCommandManager {
                     .to_string();
 
                 let new_subdirectory = match &subdirectory {
-                    Some(parent) => Some(format!("{}:{}", parent, subdir_name)),
+                    Some(parent) => Some(format!("{parent}:{subdir_name}")),
                     None => Some(subdir_name),
                 };
 

@@ -190,7 +190,10 @@ impl BottomPane<'_> {
     }
 
     /// Update available custom commands
-    pub(crate) fn update_custom_commands(&mut self, custom_commands: Vec<crate::custom_commands::CustomSlashCommand>) {
+    pub(crate) fn update_custom_commands(
+        &mut self,
+        custom_commands: Vec<crate::custom_commands::CustomSlashCommand>,
+    ) {
         self.composer.update_custom_commands(custom_commands);
     }
 

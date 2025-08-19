@@ -175,11 +175,15 @@ impl App<'_> {
                 initial_images,
                 enhanced_keys_supported,
             );
-            
+
             // Load and apply custom commands
-            let custom_commands: Vec<_> = custom_command_manager.get_commands().into_iter().cloned().collect();
+            let custom_commands: Vec<_> = custom_command_manager
+                .get_commands()
+                .into_iter()
+                .cloned()
+                .collect();
             chat_widget.update_custom_commands(custom_commands);
-            
+
             AppState::Chat {
                 widget: Box::new(chat_widget),
             }
@@ -377,18 +381,26 @@ impl App<'_> {
                                 Vec::new(),
                                 self.enhanced_keys_supported,
                             );
-                            
+
                             // Load and apply custom commands
-                            let custom_commands: Vec<_> = self.custom_command_manager.get_commands().into_iter().cloned().collect();
+                            let custom_commands: Vec<_> = self
+                                .custom_command_manager
+                                .get_commands()
+                                .into_iter()
+                                .cloned()
+                                .collect();
                             new_widget.update_custom_commands(custom_commands);
-                            
-                            self.app_state = AppState::Chat { widget: Box::new(new_widget) };
+
+                            self.app_state = AppState::Chat {
+                                widget: Box::new(new_widget),
+                            };
                             self.app_event_tx.send(AppEvent::RequestRedraw);
                         }
                         crate::slash_command::BuiltInSlashCommand::Init => {
                             // Guard: do not run if a task is active.
                             if let AppState::Chat { widget } = &mut self.app_state {
-                                const INIT_PROMPT: &str = include_str!("../prompt_for_init_command.md");
+                                const INIT_PROMPT: &str =
+                                    include_str!("../prompt_for_init_command.md");
                                 widget.submit_text_message(INIT_PROMPT.to_string());
                             }
                         }
@@ -447,37 +459,37 @@ impl App<'_> {
 
                             self.app_event_tx.send(AppEvent::CodexEvent(Event {
                                 id: "1".to_string(),
-                            // msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
-                            //     call_id: "1".to_string(),
-                            //     command: vec!["git".into(), "apply".into()],
-                            //     cwd: self.config.cwd.clone(),
-                            //     reason: Some("test".to_string()),
-                            // }),
-                            msg: EventMsg::ApplyPatchApprovalRequest(
-                                ApplyPatchApprovalRequestEvent {
-                                    call_id: "1".to_string(),
-                                    changes: HashMap::from([
-                                        (
-                                            PathBuf::from("/tmp/test.txt"),
-                                            FileChange::Add {
-                                                content: "test".to_string(),
-                                            },
-                                        ),
-                                        (
-                                            PathBuf::from("/tmp/test2.txt"),
-                                            FileChange::Update {
-                                                unified_diff: "+test\n-test2".to_string(),
-                                                move_path: None,
-                                            },
-                                        ),
-                                    ]),
-                                    reason: None,
-                                    grant_root: Some(PathBuf::from("/tmp")),
-                                },
-                            ),
-                        }));
+                                // msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
+                                //     call_id: "1".to_string(),
+                                //     command: vec!["git".into(), "apply".into()],
+                                //     cwd: self.config.cwd.clone(),
+                                //     reason: Some("test".to_string()),
+                                // }),
+                                msg: EventMsg::ApplyPatchApprovalRequest(
+                                    ApplyPatchApprovalRequestEvent {
+                                        call_id: "1".to_string(),
+                                        changes: HashMap::from([
+                                            (
+                                                PathBuf::from("/tmp/test.txt"),
+                                                FileChange::Add {
+                                                    content: "test".to_string(),
+                                                },
+                                            ),
+                                            (
+                                                PathBuf::from("/tmp/test2.txt"),
+                                                FileChange::Update {
+                                                    unified_diff: "+test\n-test2".to_string(),
+                                                    move_path: None,
+                                                },
+                                            ),
+                                        ]),
+                                        reason: None,
+                                        grant_root: Some(PathBuf::from("/tmp")),
+                                    },
+                                ),
+                            }));
                         }
-                    }
+                    },
                     SlashCommand::Custom(custom_cmd) => {
                         // Handle custom commands by extracting arguments and submitting the prompt
                         if let AppState::Chat { widget } = &mut self.app_state {
@@ -487,7 +499,7 @@ impl App<'_> {
                             widget.submit_text_message(prompt);
                         }
                     }
-                }
+                },
                 AppEvent::OnboardingAuthComplete(result) => {
                     if let AppState::Onboarding { screen } = &mut self.app_state {
                         screen.on_auth_complete(result);
@@ -507,11 +519,16 @@ impl App<'_> {
                         initial_images,
                         enhanced_keys_supported,
                     );
-                    
+
                     // Load and apply custom commands
-                    let custom_commands: Vec<_> = self.custom_command_manager.get_commands().into_iter().cloned().collect();
+                    let custom_commands: Vec<_> = self
+                        .custom_command_manager
+                        .get_commands()
+                        .into_iter()
+                        .cloned()
+                        .collect();
                     chat_widget.update_custom_commands(custom_commands);
-                    
+
                     self.app_state = AppState::Chat {
                         widget: Box::new(chat_widget),
                     }
